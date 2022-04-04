@@ -12,18 +12,28 @@
 #include <signal.h>
 #include <sys/ipc.h>
 #include <errno.h> 
+#include <sys/types.h>
+#include <sys/msg.h>
+
 #define MAXTIMEBETWEENNEWPROCSNS 1000
 #define MAXTIMEBETWEENNEWPROCSSECS 1
-#define MAX_PROC 1
+#define MAX_PROC 2
 
 struct processCtrlBlock
 {
-    float totalCpuTime = 0;
-    float timeInSystem = 0;
-    float lastBurstTime = 0;
-    int processPriority = 1;
-    bool inUse = false;
+    float totalCpuTime;
+    float timeInSystem;
+    float lastBurstTime;
+    int processPriority;
+    bool inUse;
     int pid;
 };
 
-processCtrlBlock createUserProcess(int);
+struct msgbuf
+{
+    long mtype;
+    char mtext[50];
+};
+
+void cleanup();
+struct processCtrlBlock createUserProcess(int);
