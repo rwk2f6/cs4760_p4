@@ -109,7 +109,7 @@ int main(int argc, char *argv[])
     //Initialize array of PCBs
     for (int i = 0; i < MAX_PROC; i++)
     {
-        processCtrlTable_ptr[i] = createUserProcess(i);
+        processCtrlTable_ptr[i] = createUserProcess(i+1);
     }
 
     printf("oss.c: Forking...\n");
@@ -144,9 +144,6 @@ int main(int argc, char *argv[])
             else
             {
                 pid_list[j] = processCtrlTable_ptr[j].pid;
-                j++;
-                curNumOfProcs++;
-                totalNumOfProcs++;
             }
 
             //Set msgBuffer
@@ -154,11 +151,15 @@ int main(int argc, char *argv[])
             strcpy(msgBuffer.mtext, "You got mail!\0");
             int len = strlen(msgBuffer.mtext);
 
-            if (msgsnd(msgQ_id, &msgBuffer, len+1, msgBuffer.mtype) == -1)
+            if (msgsnd(msgQ_id, &msgBuffer, len+1, 0) == -1)
             {
                 perror("oss.c: Error sending message, exiting...\n");
                 cleanup();
             }
+
+            j++;
+            curNumOfProcs++;
+            totalNumOfProcs++;
         }
     }
 

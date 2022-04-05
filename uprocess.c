@@ -80,7 +80,7 @@ int main(int argc, char *argv[])
     for ( ; ; )
     {
         printf("Child: Inside for loop...\n");
-        if (msgrcv(msgQ_id, &msgBuffer, sizeof(msgBuffer.mtext), msgBuffer.mtype, 0) == -1)
+        if (msgrcv(msgQ_id, &msgBuffer, sizeof(msgBuffer.mtext), proc_id, 0) == -1)
         {
             perror("Child: Error with msgrcv");
             exit(0);
