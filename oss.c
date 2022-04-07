@@ -49,7 +49,7 @@ void cleanup()
 
 void oot_handler()
 {
-    printf("Process took too long, terminating...\n");
+    printf("Process was running for 3 seconds, terminating...\n");
 
     for (int i = 0; i < MAX_PROC; i++)
     {
@@ -90,7 +90,7 @@ int main(int argc, char *argv[])
     blockedQ = malloc(sizeof(int) * MAX_PROC);
 
     //Set timer to stop running if it takes too long
-    alarm(10);
+    alarm(3);
 
     //Open logfile
     ossLog = fopen("osslogfile", "a");
@@ -171,6 +171,8 @@ int main(int argc, char *argv[])
 
         processCtrlTable_ptr[j].pid = fork();
 
+        fprintf(ossLog, "OSS: Generating process with PID %d and putting in queue 1 at time %d:%d\n", processCtrlTable_ptr[j].pid, secTimer_ptr[0], nsecTimer_ptr[0]);
+
         if (processCtrlTable_ptr[j].pid == -1)
         {
             perror("Fork failed, program exiting early...\n");
@@ -214,7 +216,7 @@ int main(int argc, char *argv[])
 
         j++;
 
-        if (curNumOfProcs >= MAX_PROC)
+        if (curNumOfProcs > MAX_PROC)
         {
             break;
         }
@@ -222,11 +224,12 @@ int main(int argc, char *argv[])
 
     printf("oss.c: Waiting for children...\n");
 
+    fprintf(ossLog, "oss.c is closing...\n");
+
     while(wait(NULL) > 0);
 
     //oss schedules processes by sending messages
     printf("oss.c: Ending...\n");
-    fprintf(ossLog, "oss.c is closing...\n");
 
     //Wait for a message that says the user process finished
     cleanup();

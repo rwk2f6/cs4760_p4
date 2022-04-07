@@ -37,3 +37,4 @@ struct msgbuf
 
 void cleanup();
 struct processCtrlBlock createUserProcess(int);
+int findOpenUserProcessIndex();
