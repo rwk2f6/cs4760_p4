@@ -17,7 +17,7 @@
 
 #define MAXTIMEBETWEENNEWPROCSNS 1000
 #define MAXTIMEBETWEENNEWPROCSSECS 1
-#define MAX_PROC 2
+#define MAX_PROC 10
 
 struct processCtrlBlock
 {

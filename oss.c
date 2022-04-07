@@ -7,15 +7,27 @@ int * q2 = NULL;
 int * q3 = NULL;
 int * q4 = NULL;
 int * blockedQ = NULL;
-int processCtrlTable_id, secTimer_id, nsecTimer_id, msgQ_id, curNumOfProcs = 0, totalNumOfProcs = 0;
+int processCtrlTable_id, secTimer_id, nsecTimer_id, msgQ_id, curNumOfProcs = 0;
 struct processCtrlBlock * processCtrlTable_ptr = NULL;
 unsigned int * secTimer_ptr = NULL;
 unsigned int * nsecTimer_ptr = NULL;
+FILE * ossLog = NULL;
 
 struct processCtrlBlock createUserProcess(int procid)
 {
     struct processCtrlBlock newProcess = { 0.0, 0.0, 0.0, 1, false, procid };
     return newProcess;
+}
+
+int findOpenUserProcessIndex()
+{
+    for (int i = 0; i < MAX_PROC; i++)
+    {
+        if (processCtrlTable_ptr[i].inUse = false)
+        {
+            return i;
+        }
+    }
 }
 
 void cleanup()
@@ -30,7 +42,23 @@ void cleanup()
 
     msgctl(msgQ_id, IPC_RMID, NULL);
 
+    fclose(ossLog);
+
     exit(0);
+}
+
+void oot_handler()
+{
+    printf("Process took too long, terminating...\n");
+
+    for (int i = 0; i < MAX_PROC; i++)
+    {
+        kill(pid_list[i], SIGTERM);
+    }
+
+    while(wait(NULL) > 0);
+
+    cleanup();
 }
 
 void cc_handler()
@@ -51,6 +79,7 @@ int main(int argc, char *argv[])
 {
     //Signal for Ctrl-c
     signal(SIGINT, cc_handler);
+    signal(SIGALRM, oot_handler);
 
     //Allocate space for queues
     pid_list = malloc(sizeof(int) * MAX_PROC);
@@ -59,6 +88,13 @@ int main(int argc, char *argv[])
     q3 = malloc(sizeof(int) * MAX_PROC);
     q4 = malloc(sizeof(int) * MAX_PROC);
     blockedQ = malloc(sizeof(int) * MAX_PROC);
+
+    //Set timer to stop running if it takes too long
+    alarm(10);
+
+    //Open logfile
+    ossLog = fopen("osslogfile", "a");
+    fprintf(ossLog, "oss.c has began...\n");
 
     printf("oss.c: Starting...\n");
 
@@ -109,65 +145,88 @@ int main(int argc, char *argv[])
     //Initialize array of PCBs
     for (int i = 0; i < MAX_PROC; i++)
     {
-        processCtrlTable_ptr[i] = createUserProcess(i+1);
+        processCtrlTable_ptr[i] = createUserProcess(i);
     }
 
     printf("oss.c: Forking...\n");
 
     //Create user processes at random intervals, no more than 20 processes
     //Generate a new process by allocating and initializing the process control block, then fork and exec
-    int j = 1;
-    while (totalNumOfProcs < 3)
+    long j = 0;
+    nsecTimer_ptr[0] = 0;
+    secTimer_ptr[0] = 0;
+    
+    while (1)
     {
-        while (curNumOfProcs < 3)
+        struct msgbuf msgBuffer;
+
+        nsecTimer_ptr[0] += 100;
+        if (nsecTimer_ptr[0] == 1000000000)
         {
-            struct msgbuf msgBuffer;
+            nsecTimer_ptr[0] = 0;
+            secTimer_ptr[0] += 1;
+        }
 
-            sleep(1);
+        //int openPCTIndex = findOpenUserProcessIndex();
 
-            processCtrlTable_ptr[j].pid = fork();
+        processCtrlTable_ptr[j].pid = fork();
 
-            if (processCtrlTable_ptr[j].pid == -1)
-            {
-                perror("Fork failed, program exiting early...\n");
-                //Call some fork error handling
-                cleanup();
-            }
+        if (processCtrlTable_ptr[j].pid == -1)
+        {
+            perror("Fork failed, program exiting early...\n");
+            //Call some fork error handling
+            cleanup();
+        }
 
-            if (processCtrlTable_ptr[j].pid == 0)
-            {
-                char * pnum = malloc(sizeof(char) * 5);
-                sprintf(pnum, "%d", j);
-                //Execl the child, though I'm not sure what parameters to pass with it
-                execl("./uprocess", "./uprocess", pnum, NULL);
-            }
-            else
-            {
-                pid_list[j] = processCtrlTable_ptr[j].pid;
-            }
-
-            //Set msgBuffer
-            msgBuffer.mtype = j;
-            strcpy(msgBuffer.mtext, "You got mail!\0");
-            int len = strlen(msgBuffer.mtext);
-
-            if (msgsnd(msgQ_id, &msgBuffer, len+1, 0) == -1)
-            {
-                perror("oss.c: Error sending message, exiting...\n");
-                cleanup();
-            }
-
-            j++;
+        if (processCtrlTable_ptr[j].pid == 0)
+        {
+            char * pnum = malloc(sizeof(char) * 5);
+            sprintf(pnum, "%ld", j);
+            //Execl the child, though I'm not sure what parameters to pass with it
+            execl("./uprocess", "./uprocess", pnum, NULL);
+        }
+        else
+        {
+            pid_list[j] = processCtrlTable_ptr[j].pid;
+            processCtrlTable_ptr[j].inUse = true;
             curNumOfProcs++;
-            totalNumOfProcs++;
+        }
+
+        //Set msgBuffer
+        msgBuffer.mtype = processCtrlTable_ptr[j].pid;
+        strcpy(msgBuffer.mtext, "Scheduling child process..\0");
+        int len = strlen(msgBuffer.mtext);
+
+        if (msgsnd(msgQ_id, &msgBuffer, len+1, 0) == -1)
+        {
+            perror("oss.c: Error sending message, exiting...\n");
+            cleanup();
+        }
+
+        if (msgrcv(msgQ_id, &msgBuffer, sizeof(msgBuffer.mtext), j, 0) == -1)
+        {
+            perror("Child: Error with msgrcv\n");
+            cleanup();
+        }
+        char temp[50];
+        strcpy(temp, msgBuffer.mtext);
+        printf("oss.c: Message received from child %ld: \"%s\"\n", j, temp);
+
+        j++;
+
+        if (curNumOfProcs >= MAX_PROC)
+        {
+            break;
         }
     }
 
     printf("oss.c: Waiting for children...\n");
+
     while(wait(NULL) > 0);
 
     //oss schedules processes by sending messages
     printf("oss.c: Ending...\n");
+    fprintf(ossLog, "oss.c is closing...\n");
 
     //Wait for a message that says the user process finished
     cleanup();

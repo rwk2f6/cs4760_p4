@@ -6,29 +6,34 @@ struct processCtrlBlock * processCtrlTable_ptr = NULL;
 unsigned int * secTimer_ptr = NULL;
 unsigned int * nsecTimer_ptr = NULL;
 
+void cc_handler()
+{
+    printf("Received CTRL-C, terminating...\n");
+
+    kill(getpid(), SIGTERM);
+
+    cleanup();
+}
+
 void cleanup()
 {
     shmdt(processCtrlTable_ptr);
     shmdt(secTimer_ptr);
     shmdt(nsecTimer_ptr);
 
-    shmctl(processCtrlTable_id, IPC_RMID, NULL);
-    shmctl(secTimer_id, IPC_RMID, NULL);
-    shmctl(nsecTimer_id, IPC_RMID, NULL);
-
-    msgctl(msgQ_id, IPC_RMID, NULL);
-
     exit(0);
 }
 
 int main(int argc, char *argv[])
 {
-    printf("Child: Started running...\n");
+    signal(SIGINT, cc_handler);
 
     struct msgbuf msgBuffer;
 
     //Get proc_id from execl
-    int proc_id = atoi(argv[1]);
+    long proc_id = atoi(argv[1]);
+
+    printf("Child %ld: Started running...\n", proc_id);
 
     //Attach to shared memory for process control table
     key_t processCtrlTable_key = ftok(".", 'a');
@@ -45,63 +50,68 @@ int main(int argc, char *argv[])
     key_t msgQ_key = ftok("config.h", 'B');
     msgQ_id = msgget(msgQ_key, 0644 | IPC_EXCL);
 
-    printf("Attached to shared memory and message queue...\n");
+    printf("Child %ld: Attached to shared memory and message queue...\n", proc_id);
 
     if (processCtrlTable_id == -1)
     {
-        perror("oss.c: Error: Shared memory (buffer) could not be created\n");
+        perror("uprocess.c: Error: Shared memory (buffer) could not be created\n");
         printf("Error, exiting\n\n");
         cleanup();
     }
     if (secTimer_id == -1)
     {
-        perror("oss.c: Error: Shared memory (buffer) could not be created\n");
+        perror("uprocess.c: Error: Shared memory (buffer) could not be created\n");
         printf("Error, exiting\n\n");
         cleanup();
     }
     if (nsecTimer_id == -1)
     {
-        perror("oss.c: Error: Shared memory (buffer) could not be created\n");
+        perror("uprocess.c: Error: Shared memory (buffer) could not be created\n");
         printf("Error, exiting\n\n");
         cleanup();
     }
     if (msgQ_id == -1)
     {
-        perror("oss.c: Error: Message queue (buffer) could not be created\n");
+        perror("uprocess.c: Error: Message queue (buffer) could not be created\n");
         printf("Error, exiting\n\n");
         cleanup();
     }
 
-    sleep(5);
+    //sleep(5);
 
-    printf("Child %d: Ready to receive messages...\n", proc_id);
+    printf("Child %ld: Ready to receive messages...\n", proc_id);
     //printf("Child: Ready to receive messages...\n");
 
     for ( ; ; )
     {
-        printf("Child: Inside for loop...\n");
-        if (msgrcv(msgQ_id, &msgBuffer, sizeof(msgBuffer.mtext), proc_id, 0) == -1)
+        printf("Child %ld: Inside for loop...\n", proc_id);
+        if (msgrcv(msgQ_id, &msgBuffer, sizeof(msgBuffer.mtext), getpid(), 0) == -1)
         {
-            perror("Child: Error with msgrcv");
-            exit(0);
+            perror("Child: Error with msgrcv\n");
+            cleanup();
         }
         char temp[50];
         strcpy(temp, msgBuffer.mtext);
-        printf("Child: Message received: \"%s\"\n", temp);
+        printf("Child %ld: Message received: \"%s\"\n", proc_id, temp);
+
+        msgBuffer.mtype = proc_id;
+        strcpy(msgBuffer.mtext, "Telling oss.c child is done...\0");
+        int len = strlen(msgBuffer.mtext);
+
+        if (msgsnd(msgQ_id, &msgBuffer, len+1, 0) == -1)
+        {
+            perror("oss.c: Error sending message, exiting...\n");
+            cleanup();
+        }
+
         break;
     }
 
-    printf("Child %d: Done receiving messages...\n", proc_id);
+    printf("Child %ld: Done receiving messages...\n", proc_id);
 
     shmdt(processCtrlTable_ptr);
     shmdt(secTimer_ptr);
     shmdt(nsecTimer_ptr);
-
-    shmctl(processCtrlTable_id, IPC_RMID, NULL);
-    shmctl(secTimer_id, IPC_RMID, NULL);
-    shmctl(nsecTimer_id, IPC_RMID, NULL);
-
-    msgctl(msgQ_id, IPC_RMID, NULL);
 
     return 0;
 }
